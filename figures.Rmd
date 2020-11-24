@@ -1,0 +1,95 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(ggthemes)
+library(gridExtra)
+```
+
+Learning a bit of R to take advantage of `ggplot`, since it looks neat.
+
+The first thing we can do with Shiva's claims is that 
+
+```{r}
+polygon <- data.frame(
+  x = c(0, 100, 100, 0),
+  y = c(100, 0, -100, 0)
+)
+
+# Simulate drawing from the delta(X) distribution
+numPoints <- 100
+linspace <- seq(1,100,length=numPoints)
+scatter <- data.frame(
+  x = linspace,
+  y = -1*linspace
+)
+zeroes <- geom_point(data=scatter, mapping=aes(x=x, y=y))
+
+# Draw from the uniform distribution [0, 100]
+scatter <- data.frame(
+  x = linspace,
+  y = -1*linspace + runif(numPoints, min=0, max=100)
+)
+uniform <- geom_point(data=scatter, mapping=aes(x=x, y=y))
+
+# Draw from a linear model with log-normally distributed noise and a slope less than 1
+lm <- function(slope, intercept, sd, numPoints, addedLine) {
+  lm_ <- slope*linspace + intercept + rnorm(numPoints, mean=0, sd=sd)
+  
+  # reject samples to avoid vals that exceed [addedLine,100 + addedLine]
+  while (any(lm_+addedLine < addedLine)) {
+    idx <- lm_+addedLine < addedLine
+    lm_[idx] = slope*linspace[idx] + intercept + rnorm(length(lm_[idx]), mean=0, sd=sd)
+  }
+  while (any(lm_+addedLine > 100+addedLine)) {
+    idx <- lm_+addedLine > 100+addedLine
+    lm_[idx] = slope*linspace[idx] + intercept + rnorm(length(lm_[idx]), mean=0, sd=sd)
+  }
+
+  return(lm_)
+}
+
+scatter <- data.frame(
+  x = linspace,
+  y = -1*linspace + lm(0.5, 0, 20, numPoints, -1*linspace)
+)
+linear1 <- geom_point(data=scatter, mapping=aes(x=x, y=y))
+    
+scatter <- data.frame(
+  x = linspace,
+  y = -1*linspace + lm(1.5, 0, 20, numPoints, -1*linspace)
+)
+linear2 <- geom_point(data=scatter, mapping=aes(x=x, y=y))
+
+
+# Draw from a linear model with log-normally distributed noise and a slope more than 1
+
+p <- ggplot(polygon, aes(x = x, y = y)) + geom_polygon(alpha=0.15)
+
+p1 <- p + zeroes + theme_light()
+p2 <- p + uniform + theme_light()
+p3 <- p + linear1 + theme_light()
+p4 <- p + linear2 + theme_light()
+
+grid.arrange(p1, p2, p3, p4, nrow = 2, ncol = 2)
+
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+```{r}
+
+```
+
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+```{r}
+
+```
+
