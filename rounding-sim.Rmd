@@ -1,0 +1,273 @@
+---
+title: "Rounding Error Sim"
+output: html_notebook
+---
+
+
+```{r}
+library(tidyverse)
+library(ggthemes)
+library(gridExtra)
+```
+
+Simulating errors that come from "reconstruction" timeseries vote deltas for presidential candidates.
+
+For this simulation we assume that vote count deltas between timepoints are drawn from a uniform distribution.
+
+```{r}
+timepoints <- 50000
+min_delta <- 0
+max_delta <- 1000
+
+time <- seq(from=1, to=timepoints, by=1)
+
+getMonotonicIntegerRandomWalkDeltas <- function(boost=0) {
+  diffs <- round(runif(timepoints, min_delta, max_delta+boost),0)
+  return(diffs)
+}
+
+getReconstructionDeltaFrame <- function() {
+  d_deltas = getMonotonicIntegerRandomWalkDeltas(0)
+  d = cumsum(d_deltas)
+  
+  r_deltas = getMonotonicIntegerRandomWalkDeltas()
+  r = cumsum(r_deltas)
+  
+  totals <- d+r
+  
+  reconstruct_deltas <- function(cum_votes, totals, rounding_digit) {
+    rounded_pcts <- round(d / totals, rounding_digit)
+    reconstruction <- rounded_pcts * totals
+    reconstructed_deltas <- c(0, diff(reconstruction))
+    return(reconstructed_deltas)
+  }
+  
+  df <- data.frame(
+    time=time,
+    d=d,
+    r=r,
+    reconstructed_deltas_5 = reconstruct_deltas(d, totals, 5),
+    reconstructed_deltas_4 = reconstruct_deltas(d, totals, 4),
+    reconstructed_deltas_3 = reconstruct_deltas(d, totals, 3),
+    reconstructed_deltas_2 = reconstruct_deltas(d, totals, 2),
+    reconstructed_deltas_1 = reconstruct_deltas(d, totals, 1),
+    reconstructed_deltas_0 = reconstruct_deltas(d, totals, 0),
+    deltas=d_deltas,
+    totals=totals
+  )
+}
+
+df <- getReconstructionDeltaFrame()
+
+alpha <- 0.5
+g <- ggplot(df)  + 
+  geom_point(aes(x=time, y=reconstructed_deltas_1, col='rounding_digit 1'), alpha=alpha) +
+  geom_point(aes(x=time, y=reconstructed_deltas_2, col='rounding_digit 2'), alpha=alpha) +
+  geom_point(aes(x=time, y=reconstructed_deltas_3, col='rounding_digit 3'), alpha=alpha) +
+  geom_point(aes(x=time, y=reconstructed_deltas_4, col='rounding_digit 4'), alpha=alpha) +
+  geom_point(aes(x=time, y=deltas, col='exact'), alpha=alpha) + 
+  theme_light()
+
+g
+```
+
+There's a weird pattern that emerges where we see deltas that appear beyond the original distribution we're drawing from.
+
+There must be a rule that governs where these deviations show up!
+
+Let's attack this formally, focusing on negative deltas. When can a reconstructed vote for a candidate slide *backwards*?
+
+Let's define a reconstructed vote as a rounded percentage of vote shares multiplied by the total:
+
+$$
+reconstruction = R_3(\dfrac{v}{T})T
+$$
+Where: 
+
+* the $R_n$ operation is a rounding to the $n$th digit
+* $v$ is count of votes for one candidate at a timestep
+* $T$ is the total number of votes at a timestep
+
+Backslides will happens when:
+
+$$
+R_3(\dfrac{v^+}{T^+})T^+ < R_3(\dfrac{v}{T})T
+$$
+Where the $x^+$ notation refers to the *next* timestep's quantity.
+
+Let's say we have an operation $D_n(x)$ that tells use the $n$th digit of x (with subsequent digits in the mantissa). If so, then the operation $R_n(x)$ can be expressed as this piecewise function:
+
+$$
+R_n(x) = \dfrac{C(10^nx)}{10^n}; D_{n+1}(x) \geq 5
+$$
+$$
+R_n(x) = \dfrac{F(10^nx)}{10^n}; D_{n+1}(x) < 5
+$$
+Where $C$ is the ceiling function and $F$ is the floor function. When their arguments are fractions, these functions can be defined as:
+
+$$
+F(x) = F(\frac n d) = \frac n d - \dfrac{mod(n,d)}{d}
+$$
+The logic being: the floor function is simply removing the part that cannot be neatly divided from som quotient.
+
+A ceiling, then is:
+
+$$
+C(x) = F(x) + 1
+$$
+
+Since a ceiling gets you to the closest next integer, it's equivalent to flooring and then adding 1.
+
+Ok, we now have all the tools we need to figure out when $R_3(\dfrac{v^+}{T^+})T^+ < R_3(\dfrac{v}{T})T$. 
+
+We'll have to consider every combination of when $D_4(\dfrac{v^+}{T^+}) \geq 5$ or $D_4(\dfrac{v}{T}) < 5$ etc. to see how the $R_3$ function will evaluate, though, which is annoying, but that's what you get when you use piecewise functions I guess.
+
+### Condition 1
+
+$D_4(\dfrac{v^+}{T^+}) \geq 5$ and $D_4(\dfrac{v}{T}) \geq 5$
+
+In this condition, the statement R_3(\dfrac{v^+}{T^+})T^+ < R_3(\dfrac{v}{T})T evaluates to:
+
+$$
+\dfrac{C(10^3\dfrac{v^+}{T^+})}{10^3}T^+ < \dfrac{C(10^3\dfrac{v}{T})}{10^3}T
+$$
+Or:
+
+$$
+C(10^3\dfrac{v^+}{T^+})T^+ < C(10^3\dfrac{v}{T})T
+$$
+Which, using the definition of $C$, becomes:
+
+$$
+(\dfrac{10^3v^+}{T^+} - \dfrac{mod(10^3v^+, T^+)}{T^+} + 1)T^+ < (\dfrac{10^3v}{T} - \dfrac{mod(10^3v, T)}{T} + 1)T
+$$
+Cleaning up to:
+
+$$
+10^3v^+ - mod(10^3v^+, T^+) + T^+ < 10^3v - mod(10^3v, T) + T
+$$
+We know that:
+
+$$
+v^+ = v + \Delta_v
+$$
+So we can write:
+
+$$
+10^3v + 10^3\Delta_v  - mod(10^3v^+, T^+) + T^+ < 10^3v - mod(10^3v, T) + T
+$$
+Making our simplified condition:
+
+$$
+\Delta_v < \dfrac{ mod(10^3v^+, T^+) - mod(10^3v, T) -\Delta_T}{10^3} 
+$$
+
+### Condition 2
+
+$D_4(\dfrac{v^+}{T^+}) \geq 5$ and $D_4(\dfrac{v}{T}) < 5$
+
+With similar logic to the above, this lets us say:
+
+$$
+\Delta_v < \dfrac{mod(10^3v^+, T^+) -mod(10^3v, T) - T^+}{10^3}
+$$
+
+### Condition 3
+
+$D_4(\dfrac{v^+}{T^+}) < 5$ and $D_4(\dfrac{v}{T}) \geq 5$
+
+$$
+\Delta_v <   \dfrac{mod(10^3v^+, T^+) - mod(10^3v, T) + T}{10^3}
+$$
+
+### Condition 4
+
+$D_4(\dfrac{v^+}{T^+}) < 5$ and $D_4(\dfrac{v}{T}) < 5$
+
+$$
+\Delta_v <   \dfrac{mod(10^3v^+, T^+) - mod(10^3v, T)}{10^3}
+$$
+
+```{r}
+mod <- function(n, d){
+  return(n %% d)
+}
+
+digit <- function(number, n){
+  return(number*(10**n) - floor((10**(n-1))*number)*10)
+}
+
+```
+
+
+```{r}
+
+conditionOne <- function(Vdeltas, Tdeltas, vp, tp, v, t) {
+  return(Vdeltas < (mod((10**3)*vp, tp) - mod((10**3)*v, t) - Tdeltas) / (10**3))
+}
+
+conditionTwo <- function(Vdeltas, Tdeltas, vp, tp, v, t) {
+  return(Vdeltas < (mod((10**3)*vp, tp) - mod((10**3)*v, t) - tp) / (10**3))
+}
+
+conditionThree <- function(Vdeltas, Tdeltas, vp, tp, v, t) {
+  return(Vdeltas < (mod((10**3)*vp, tp) - mod((10**3)*v, t) + t) / (10**3))
+}
+
+conditionFour <- function(Vdeltas, Tdeltas, vp, tp, v, t) {
+  return(Vdeltas < (mod((10**3)*vp, tp) - mod((10**3)*v, t)) / (10**3))
+}
+meetsConditions <- function(votes, totals) {
+  # We're only really concerned with steps where there was a previous timestep
+  Vdeltas <- diff(votes)
+  Tdeltas <- diff(totals)
+  v <- votes[1:length(votes)-1]
+  t <- totals[1:length(totals)-1]
+  vp <- votes[2:length(votes)]
+  tp <- totals[2:length(totals)]
+  
+  shares <- v / t
+  sharesP <- vp / tp
+  d <- digit(shares, 4)
+  dP <- digit(sharesP, 4)
+  
+  meetsConditions <- logical(length(Vdeltas))
+  idx <- d >= 5 & dP >= 5
+  meetsConditions[idx] <- conditionOne(Vdeltas[idx], Tdeltas[idx], vp[idx], tp[idx], v[idx], t[idx])
+  
+
+  idx <- d >= 5 & dP < 5
+  meetsConditions[idx] <- conditionTwo(Vdeltas[idx], Tdeltas[idx], vp[idx], tp[idx], v[idx], t[idx])
+  
+
+  idx <- d < 5 & dP >= 5
+  meetsConditions[idx] <- conditionThree(Vdeltas[idx], Tdeltas[idx], vp[idx], tp[idx], v[idx], t[idx])
+  
+
+  idx <- d < 5 & dP < 5
+  meetsConditions[idx] <- conditionFour(Vdeltas[idx], Tdeltas[idx], vp[idx], tp[idx], v[idx], t[idx]) 
+  
+  # pad left
+  meetsConditions <- c(FALSE, meetsConditions)
+  
+  return(meetsConditions)
+  
+}
+
+meetsConditions <- meetsConditions(df$d, df$totals)
+locs <- seq(1, length(df$totals), 1)[meetsConditions]
+
+regions <- ggplot(df) + 
+  geom_vline(xintercept=locs, alpha=0.1) +
+  geom_point(aes(x=time, y=reconstructed_deltas_3, col='rounding_digit 3'))
+
+regions
+
+#ggsave(file='rounding-sim-regions.png',regions)
+```
+
+```{r}
+sum(meetsConditions)
+sum(df$reconstructed_deltas_3 < 0)
+```
+

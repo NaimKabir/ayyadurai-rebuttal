@@ -1,5 +1,5 @@
 ---
-title: "R Notebook"
+title: "Significance Figs"
 output: html_notebook
 ---
 
@@ -11,10 +11,16 @@ library(gridExtra)
 
 Learning a bit of R to take advantage of `ggplot`, since it looks neat.
 
-The first thing we can do with Shiva's claims is that 
+In one figure, I'd like to demonstrate that the equation for Shiva's chosen measure, which is:
+
+$$ y = -x + Z; Z \sim D $$
+Where $x$ is the percent of straight ticket Republican voters in a precinct, and $Z$ is a random variable representing the percent of split ticket voters voting for Trump, drawn from some distribution $D$.
 
 ```{r}
-polygon <- data.frame(
+
+# Get boundaries for all data given the structure of the equation and the limitation that percents must be within
+# [0,100]
+bounds <- data.frame(
   x = c(0, 100, 100, 0),
   y = c(100, 0, -100, 0)
 )
@@ -29,67 +35,62 @@ scatter <- data.frame(
 zeroes <- geom_point(data=scatter, mapping=aes(x=x, y=y))
 
 # Draw from the uniform distribution [0, 100]
-scatter <- data.frame(
-  x = linspace,
-  y = -1*linspace + runif(numPoints, min=0, max=100)
-)
-uniform <- geom_point(data=scatter, mapping=aes(x=x, y=y))
+getData <- function(Z) {
+  d  <- data.frame(
+    x = linspace,
+    y = -1*linspace + Z
+  )
+  return(d)
+}
 
-# Draw from a linear model with log-normally distributed noise and a slope less than 1
-lm <- function(slope, intercept, sd, numPoints, addedLine) {
+uniformZ = runif(numPoints, min=0, max=100)
+uniform <- geom_point(data=getData(uniformZ), mapping=aes(x=x, y=y))
+
+# Draw from a linear model with normally distributed noise and arbitrary slope/intercept--
+# but reject samples outside the possible bounds.
+lm <- function(slope, intercept, sd, numPoints) {
   lm_ <- slope*linspace + intercept + rnorm(numPoints, mean=0, sd=sd)
   
-  # reject samples to avoid vals that exceed [addedLine,100 + addedLine]
-  while (any(lm_+addedLine < addedLine)) {
-    idx <- lm_+addedLine < addedLine
+  # reject samples to avoid vals that exceed our boundaries
+  while (any(lm_ < 0)) {
+    idx <- lm_ < 0
     lm_[idx] = slope*linspace[idx] + intercept + rnorm(length(lm_[idx]), mean=0, sd=sd)
   }
-  while (any(lm_+addedLine > 100+addedLine)) {
-    idx <- lm_+addedLine > 100+addedLine
+  while (any(lm_ > 100)) {
+    idx <- lm_ > 100
     lm_[idx] = slope*linspace[idx] + intercept + rnorm(length(lm_[idx]), mean=0, sd=sd)
   }
 
   return(lm_)
 }
 
-scatter <- data.frame(
-  x = linspace,
-  y = -1*linspace + lm(0.5, 0, 20, numPoints, -1*linspace)
-)
-linear1 <- geom_point(data=scatter, mapping=aes(x=x, y=y))
+lineDownZ <- lm(0.5, 10, 20, numPoints)
+linearDown <- geom_point(data=getData(lineDownZ), mapping=aes(x=x, y=y))
     
-scatter <- data.frame(
-  x = linspace,
-  y = -1*linspace + lm(1.5, 0, 20, numPoints, -1*linspace)
-)
-linear2 <- geom_point(data=scatter, mapping=aes(x=x, y=y))
+lineUpZ <- lm(1.5, 10, 20, numPoints)
+linearUp <- geom_point(data=getData(lineUpZ), mapping=aes(x=x, y=y))
 
 
 # Draw from a linear model with log-normally distributed noise and a slope more than 1
 
-p <- ggplot(polygon, aes(x = x, y = y)) + geom_polygon(alpha=0.15)
+p <- ggplot(bounds, aes(x = x, y = y)) + geom_polygon(alpha=0.15) + theme_light()
 
-p1 <- p + zeroes + theme_light()
-p2 <- p + uniform + theme_light()
-p3 <- p + linear1 + theme_light()
-p4 <- p + linear2 + theme_light()
+p1 <- p + zeroes + labs(tag = "A")
+p2 <- p + uniform + labs(tag = "B")
+p3 <- p + linearDown + labs(tag = "C")
+p4 <- p + linearUp + labs(tag = "D")
 
 grid.arrange(p1, p2, p3, p4, nrow = 2, ncol = 2)
 
-```
-
-Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
-
-```{r}
+# save
+ g <- arrangeGrob(p1, p2, p3, p4, nrow = 2, ncol = 2) #generates g
+ ggsave(file="4fig-ayyadurai.png", g) #saves g
 
 ```
+**A:** $z = 0$. Baseline extreme assumption, where split-ticket Trump vote percentage in all precincts is 0. 
 
+**B:** $Z \sim U(0, 100)$. Assuming split-ticket Trump vote percentage is uniformly drawn. 
 
-When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+**C:** $Z \sim 0.5x + 10 + \epsilon; \epsilon \in \mathcal{N}(0, 20); \{0 \ge z \ge 100\}$. Assuming a linear relationship between Republican votes in a district and split-ticket Trump votes, insofar as that linear relationship results in possible values. 
 
-The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
-
-```{r}
-
-```
-
+**D:** $Z \sim 1.5x + 10 + \epsilon; \epsilon \in \mathcal{N}(0, 20); \{0 \ge z \ge 100\}$. Assuming a strong linear relationship between Republican votes and split-ticket Trump votes, insofar as that linear relationship admits possible values.
