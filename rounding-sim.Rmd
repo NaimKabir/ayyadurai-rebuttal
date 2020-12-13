@@ -1,8 +1,8 @@
 ---
 title: "Rounding Error Sim"
 output:
-  html_notebook: default
   pdf_document: default
+  html_notebook: default
 ---
 
 
@@ -15,6 +15,8 @@ library(gridExtra)
 Simulating errors that come from "reconstruction" timeseries vote deltas for presidential candidates.
 
 For this simulation we assume that vote count deltas between timepoints are drawn from a uniform distribution.
+
+Later, we formally define when exactly these errors will occur.
 
 ```{r}
 timepoints <- 50000
@@ -90,7 +92,7 @@ Where:
 * $v$ is count of votes for one candidate at a timestep
 * $T$ is the total number of votes at a timestep
 
-Backslides will happens when:
+Backslides will happen when:
 
 $$
 R_3(\dfrac{v^+}{T^+})T^+ < R_3(\dfrac{v}{T})T
@@ -120,7 +122,7 @@ $$
 
 Since a ceiling gets you to the closest next integer, it's equivalent to flooring and then adding 1.
 
-Ok, we now have all the tools we need to figure out when $R_3(\dfrac{v^+}{T^+})T^+ < R_3(\dfrac{v}{T})T$. 
+Ok, we now have all the tools we need to figure out when $R_3(\dfrac{v^+}{T^+})T^{+} < R_3(\dfrac{v}{T})T$. 
 
 We'll have to consider every combination of when $D_4(\dfrac{v^+}{T^+}) \geq 5$ or $D_4(\dfrac{v}{T}) < 5$ etc. to see how the $R_3$ function will evaluate, though, which is annoying, but that's what you get when you use piecewise functions I guess.
 
@@ -128,7 +130,7 @@ We'll have to consider every combination of when $D_4(\dfrac{v^+}{T^+}) \geq 5$ 
 
 $D_4(\dfrac{v^+}{T^+}) \geq 5$ and $D_4(\dfrac{v}{T}) \geq 5$
 
-In this condition, the statement R_3(\dfrac{v^+}{T^+})T^+ < R_3(\dfrac{v}{T})T evaluates to:
+In this condition, the statement $R_3(\dfrac{v^+}{T^+})T^+ < R_3(\dfrac{v}{T})T$ evaluates to:
 
 $$
 \dfrac{C(10^3\dfrac{v^+}{T^+})}{10^3}T^+ < \dfrac{C(10^3\dfrac{v}{T})}{10^3}T
