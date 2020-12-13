@@ -292,8 +292,7 @@ ggsave(file='rounding-sim-regions.png',regions)
 
 ```{r}
 sum(meetsConditions)
-trueLocs 
-locs
+sum(trueLocs - locs)
 
 ```
 
