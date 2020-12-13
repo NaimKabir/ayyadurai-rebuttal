@@ -38,7 +38,7 @@ getReconstructionDeltaFrame <- function() {
   reconstruct_deltas <- function(cum_votes, totals, rounding_digit) {
     rounded_pcts <- round(d / totals, rounding_digit)
     reconstruction <- rounded_pcts * totals
-    reconstructed_deltas <- c(0, diff(reconstruction))
+    reconstructed_deltas <- c(reconstruction[1], diff(reconstruction))
     return(reconstructed_deltas)
   }
   
@@ -108,7 +108,7 @@ Where $C$ is the ceiling function and $F$ is the floor function. When their argu
 $$
 F(x) = F(\frac n d) = \frac n d - \dfrac{mod(n,d)}{d}
 $$
-The logic being: the floor function is simply removing the part that cannot be neatly divided from som quotient.
+The logic being: the floor function is simply removing the part that cannot be neatly divided from some quotient.
 
 A ceiling, then is:
 
@@ -190,10 +190,12 @@ $$
 
 ```{r}
 mod <- function(n, d){
+  # Sugar to make mod functions easier to read
   return(n %% d)
 }
 
 digit <- function(number, n){
+  # Getting the nth digit of a number
   return(number*(10**n) - floor((10**(n-1))*number)*10)
 }
 
@@ -202,25 +204,40 @@ digit <- function(number, n){
 
 ```{r}
 
-conditionOne <- function(Vdeltas, Tdeltas, vp, tp, v, t) {
-  return(Vdeltas < (mod((10**3)*vp, tp) - mod((10**3)*v, t) - Tdeltas) / (10**3))
+conditionOne <- function(n, vp, tp, v, t) {
+  # Applicable when D4(v+) >= 5 and D4(v) >= 5
+  Vdeltas <- vp - v
+  Tdeltas <- tp - t
+  return(Vdeltas < (mod((10**n)*vp, tp) - mod((10**n)*v, t) - Tdeltas) / (10**n))
 }
 
-conditionTwo <- function(Vdeltas, Tdeltas, vp, tp, v, t) {
-  return(Vdeltas < (mod((10**3)*vp, tp) - mod((10**3)*v, t) - tp) / (10**3))
+conditionTwo <- function(n, vp, tp, v, t) {
+  # Applicable when D4(v+) >= 5 and D4(v) < 5
+  Vdeltas <- vp - v
+  Tdeltas <- tp - t
+  return(Vdeltas < (mod((10**n)*vp, tp) - mod((10**n)*v, t) - tp) / (10**n))
 }
 
-conditionThree <- function(Vdeltas, Tdeltas, vp, tp, v, t) {
-  return(Vdeltas < (mod((10**3)*vp, tp) - mod((10**3)*v, t) + t) / (10**3))
+conditionThree <- function(n, vp, tp, v, t) {
+  # Applicable when D4(v+) < 5 and D4(v) >= 5
+  Vdeltas <- vp - v
+  Tdeltas <- tp - t
+  return(Vdeltas < (mod((10**n)*vp, tp) - mod((10**n)*v, t) + t) / (10**n))
 }
 
-conditionFour <- function(Vdeltas, Tdeltas, vp, tp, v, t) {
-  return(Vdeltas < (mod((10**3)*vp, tp) - mod((10**3)*v, t)) / (10**3))
+conditionFour <- function(n, vp, tp, v, t) {
+  # Applicable when D4(v+) < 5 and D4(v) < 5
+  Vdeltas <- vp - v
+  Tdeltas <- tp - t
+  return(Vdeltas < (mod((10**n)*vp, tp) - mod((10**n)*v, t)) / (10**n))
 }
-meetsConditions <- function(votes, totals) {
-  # We're only really concerned with steps where there was a previous timestep
-  Vdeltas <- diff(votes)
-  Tdeltas <- diff(totals)
+
+meetsConditions <- function(roundingDigit, votes, totals) {
+  # Return a vector where we satisfy a condition for returning a negative delta
+  
+  # We're only really concerned with steps where there was a previous timestep, so we set up
+  # vp,tp--vectors for the 'next timestamp' in the equations above, and 
+  # v, t--vectors for the current timestamp
   v <- votes[1:length(votes)-1]
   t <- totals[1:length(totals)-1]
   vp <- votes[2:length(votes)]
@@ -228,24 +245,28 @@ meetsConditions <- function(votes, totals) {
   
   shares <- v / t
   sharesP <- vp / tp
-  d <- digit(shares, 4)
-  dP <- digit(sharesP, 4)
   
-  meetsConditions <- logical(length(Vdeltas))
-  idx <- d >= 5 & dP >= 5
-  meetsConditions[idx] <- conditionOne(Vdeltas[idx], Tdeltas[idx], vp[idx], tp[idx], v[idx], t[idx])
+  d <- digit(shares, roundingDigit + 1)
+  dP <- digit(sharesP, roundingDigit + 1)
   
-
-  idx <- d >= 5 & dP < 5
-  meetsConditions[idx] <- conditionTwo(Vdeltas[idx], Tdeltas[idx], vp[idx], tp[idx], v[idx], t[idx])
+  meetsConditions <- logical(length(v))
   
-
-  idx <- d < 5 & dP >= 5
-  meetsConditions[idx] <- conditionThree(Vdeltas[idx], Tdeltas[idx], vp[idx], tp[idx], v[idx], t[idx])
+  idx <- dP >= 5 & d >= 5
+  meetsConditions[idx] <- conditionOne(roundingDigit, vp[idx], tp[idx], v[idx], t[idx])
+  print(sum(meetsConditions[idx]))
   
 
-  idx <- d < 5 & dP < 5
-  meetsConditions[idx] <- conditionFour(Vdeltas[idx], Tdeltas[idx], vp[idx], tp[idx], v[idx], t[idx]) 
+  idx <- dP >= 5 & d < 5
+  meetsConditions[idx] <- conditionTwo(roundingDigit, vp[idx], tp[idx], v[idx], t[idx])
+  print(sum(meetsConditions[idx]))
+
+  idx <- dP < 5 & d >= 5
+  meetsConditions[idx] <- conditionThree(roundingDigit, vp[idx], tp[idx], v[idx], t[idx])
+  print(sum(meetsConditions[idx]))
+
+  idx <- dP < 5 & d < 5
+  meetsConditions[idx] <- conditionFour(roundingDigit, vp[idx], tp[idx], v[idx], t[idx]) 
+  print(sum(meetsConditions[idx]))
   
   # pad left
   meetsConditions <- c(FALSE, meetsConditions)
@@ -254,20 +275,25 @@ meetsConditions <- function(votes, totals) {
   
 }
 
-meetsConditions <- meetsConditions(df$d, df$totals)
+meetsConditions <- meetsConditions(3, df$d, df$totals)
+
 locs <- seq(1, length(df$totals), 1)[meetsConditions]
+trueLocs <- seq(1, length(df$totals), 1)[df$reconstructed_deltas_3 < 0]
 
 regions <- ggplot(df) + 
   geom_vline(xintercept=locs, alpha=0.1) +
+   #geom_vline(xintercept=trueLocs, color='red', alpha=0.1) +
   geom_point(aes(x=time, y=reconstructed_deltas_3, col='rounding_digit 3'))
 
 regions
 
-#ggsave(file='rounding-sim-regions.png',regions)
+ggsave(file='rounding-sim-regions.png',regions)
 ```
 
 ```{r}
 sum(meetsConditions)
-sum(df$reconstructed_deltas_3 < 0)
+trueLocs 
+locs
+
 ```
 
